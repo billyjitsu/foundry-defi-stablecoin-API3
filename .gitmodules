@@ -10,3 +10,11 @@
 [submodule "lib/openzeppelin-contracts"]
 	path = lib/openzeppelin-contracts
 	url = https://github.com/openzeppelin/openzeppelin-contracts
+[submodule "lib/contracts"]
+	path = lib/contracts
+	url = https://github.com/api3dao/contracts
+[submodule "lib\\contracts"]
+	branch = v0.9.1
+[submodule "lib/airnode-protocol-v1"]
+	path = lib/airnode-protocol-v1
+	url = https://github.com/api3dao/airnode-protocol-v1/

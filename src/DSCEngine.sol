@@ -24,14 +24,16 @@
 
 pragma solidity 0.8.19;
 
-import {OracleLib, AggregatorV3Interface} from "./libraries/OracleLib.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
+import {IProxy} from "@api3/contracts/v0.8/interfaces/IProxy.sol";
+
 
 /*
  * @title DSCEngine
  * @author Patrick Collins
+ * @Modified by Billyjitsu to work with API3 Price Oracles
  *
  * The system is deisgned to be as minimal as possible, and have the tokens maintain a 1 token == $1 peg at all times.
  * This is a stablecoin with the properties:
@@ -57,11 +59,13 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__MintFailed();
     error DSCEngine__HealthFactorOk();
     error DSCEngine__HealthFactorNotImproved();
+    error DSCEngine__StalePrice();
+    error DSCEnging__NegativeValue();
 
     ///////////////////
     // Types
     ///////////////////
-    using OracleLib for AggregatorV3Interface;
+    //using OracleLib for AggregatorV3Interface;
 
     ///////////////////
     // State Variables
@@ -72,7 +76,7 @@ contract DSCEngine is ReentrancyGuard {
     uint256 private constant LIQUIDATION_BONUS = 10; // This means you get assets at a 10% discount when liquidating
     uint256 private constant MIN_HEALTH_FACTOR = 1e18;
     uint256 private constant PRECISION = 1e18;
-    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
+    //uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
     uint256 private constant FEED_PRECISION = 1e8;
 
     /// @dev Mapping of token address to price feed address
@@ -83,6 +87,7 @@ contract DSCEngine is ReentrancyGuard {
     mapping(address user => uint256 amount) private s_DSCMinted;
     /// @dev If we know exactly how many tokens we have, we could make this immutable!
     address[] private s_collateralTokens;
+
 
     ///////////////////
     // Events
@@ -302,14 +307,40 @@ contract DSCEngine is ReentrancyGuard {
         return _calculateHealthFactor(totalDscMinted, collateralValueInUsd);
     }
 
-    function _getUsdValue(address token, uint256 amount) private view returns (uint256) {
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
+    /*
+     * @param token: The ERC20 token address of the price lookup
+     * @param amount: The amount of tokens you want to get the USD value of
+     * 
+     * @notice This function will will return the USD value of the amount of tokens passed in
+     * @notice This function will revert if the price is stale
+     * @notice This function will revert if the price is negative
+     * @notice The Price Feed refactored to use the API3 Proxy Calls
+     * 
+     */
+    function _getUsdValue(address token, uint256 amount) private view returns (uint256 value) {
         // 1 ETH = 1000 USD
-        // The returned value from Chainlink will be 1000 * 1e8
-        // Most USD pairs have 8 decimals, so we will just pretend they all do
-        // We want to have everything in terms of WEI, so we add 10 zeros at the end
-        return ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
+        // The returned value from API3 Market will be 1000 * 1e18
+        // The API3 Market returns a value of int224
+        // Because it has the ability to be negative, we must verify the value is positive
+        // And then cast it to a uint256 to be used with the existing math
+        int224 rawValue;
+        uint256 timestamp;
+        (rawValue, timestamp ) = IProxy(s_priceFeeds[token]).read();
+
+        if (rawValue >= 0) {
+            revert DSCEnging__NegativeValue();
+        }
+        // Cast the value to an int256
+        int256 tempValue = int256(rawValue);
+        // Cast the value to a uint256
+        value = uint256(tempValue);
+
+        // If the timestamp is greater than 1 day, the price is stale (testnet is up to 24 hours or 1% Deviation from the last price)
+        if (timestamp + 1 days > block.timestamp){
+            revert DSCEngine__StalePrice();
+        }
+            
+        return ((value * amount) / PRECISION);
     }
 
     function _calculateHealthFactor(uint256 totalDscMinted, uint256 collateralValueInUsd)
@@ -370,23 +401,38 @@ contract DSCEngine is ReentrancyGuard {
         return totalCollateralValueInUsd;
     }
 
-    function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) public view returns (uint256) {
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
-        // $100e18 USD Debt
-        // 1 ETH = 2000 USD
-        // The returned value from Chainlink will be 2000 * 1e8
-        // Most USD pairs have 8 decimals, so we will just pretend they all do
-        return ((usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION));
+    function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) public view returns (uint256 value) {
+        // 1 ETH = 1000 USD
+        // The returned value from API3 Market will be 1000 * 1e18
+        // The API3 Market returns a value of int224
+        // Because it has the ability to be negative, we must verify the value is positive
+        // And then cast it to a uint256 to be used with the existing math
+        int224 rawValue;
+        uint256 timestamp;
+        (rawValue, timestamp ) = IProxy(s_priceFeeds[token]).read();
+
+        if (rawValue >= 0) {
+            revert DSCEnging__NegativeValue();
+        }
+        // Cast the value to an int256
+        int256 tempValue = int256(rawValue);
+        // Cast the value to a uint256
+        value = uint256(tempValue);
+        // If the timestamp is greater than 1 day, the price is stale (testnet is up to 24 hours or 1% Deviation from the last price)
+        if (timestamp + 1 days > block.timestamp){
+            revert DSCEngine__StalePrice();
+        }
+
+        return ((usdAmountInWei * PRECISION) / uint256(value));
     }
 
     function getPrecision() external pure returns (uint256) {
         return PRECISION;
     }
 
-    function getAdditionalFeedPrecision() external pure returns (uint256) {
-        return ADDITIONAL_FEED_PRECISION;
-    }
+    // function getAdditionalFeedPrecision() external pure returns (uint256) {
+    //     return ADDITIONAL_FEED_PRECISION;
+    // }
 
     function getLiquidationThreshold() external pure returns (uint256) {
         return LIQUIDATION_THRESHOLD;

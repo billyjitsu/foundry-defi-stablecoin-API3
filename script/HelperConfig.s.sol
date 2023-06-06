@@ -32,8 +32,8 @@ contract HelperConfig is Script {
 
     function getSepoliaEthConfig() public view returns (NetworkConfig memory sepoliaNetworkConfig) {
         sepoliaNetworkConfig = NetworkConfig({
-            wethUsdPriceFeed: 0x694AA1769357215DE4FAC081bf1f309aDC325306, // ETH / USD
-            wbtcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
+            wethUsdPriceFeed: 0x26690F9f17FdC26D419371315bc17950a0FC90eD, //0x694AA1769357215DE4FAC081bf1f309aDC325306, // ETH / USD
+            wbtcUsdPriceFeed: 0x28Cac6604A8f2471E19c8863E8AfB163aB60186a, //0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
             weth: 0xdd13E55209Fd76AfE204dBda4007C227904f0a81,
             wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063,
             deployerKey: vm.envUint("PRIVATE_KEY")

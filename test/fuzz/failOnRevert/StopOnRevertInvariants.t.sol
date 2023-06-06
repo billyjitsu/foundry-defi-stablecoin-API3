@@ -67,7 +67,7 @@ contract StopOnRevertInvariants is StdInvariant, Test {
     }
 
     function invariant_gettersCantRevert() public view {
-        dsce.getAdditionalFeedPrecision();
+        //dsce.getAdditionalFeedPrecision();
         dsce.getCollateralTokens();
         dsce.getLiquidationBonus();
         dsce.getLiquidationBonus();
